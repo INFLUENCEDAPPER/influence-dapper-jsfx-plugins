@@ -1,0 +1,105 @@
+desc: INFLUENCE DAPPER BIBLE THUMPER
+author: INFLUENCEDAPPER.COM
+tags: INFLUENCE DAPPER COM BIBLE THUMPER
+
+slider1:snare_on=1<0,1,1{OFF,ON}>SNARE
+slider2:kick_on=1<0,1,1{OFF,ON}>KICK
+slider3:more=50<0,100,1>MORE
+
+@init
+ceiling   = 10^(-0.3/20);
+sr        = srate;
+twopi     = 2*$pi;
+noise_st  = 12345;
+lim_env   = 1;
+click_held = 0;
+
+@block
+while (midirecv(offset, msg1, msg2, msg3)) (
+  status = msg1 & 0xF0;
+  note   = msg2;
+  vel    = msg3;
+  (status == 0x90 && vel > 0) ? (
+    pc = note % 12;
+    is_black = (pc==1)||(pc==3)||(pc==6)||(pc==8)||(pc==10);
+    is_black ? (
+      kick_on ? ( kick_active=1; kick_phase=0; kick_env=1; kick_pitch=120; );
+    ) : (
+      snare_on ? ( snare_active=1; snare_phase=0; snare_env=1; );
+    );
+  );
+  midisend(offset, msg1, msg2, msg3);
+);
+
+@sample
+out = 0;
+
+snare_active ? (
+  noise_st = (noise_st * 1103515245 + 12345) & 0x7FFFFFFF;
+  n = (noise_st / 1073741824) - 1;
+  snare_phase += twopi * 220 / sr;
+  snare_phase >= twopi ? snare_phase -= twopi;
+  out += (n*0.7 + sin(snare_phase)*0.3) * snare_env * ceiling;
+  snare_env *= exp(-1/(0.08*sr));
+  snare_env < 0.001 ? snare_active = 0;
+);
+
+kick_active ? (
+  kick_pitch = max(35, kick_pitch * exp(-1/(0.05*sr)));
+  kick_phase += twopi * kick_pitch / sr;
+  kick_phase >= twopi ? kick_phase -= twopi;
+  click = (kick_env > 0.7) ? ((rand(2)-1)*0.4) : 0;
+  out += (sin(kick_phase)*kick_env + click) * ceiling;
+  kick_env *= exp(-1/(0.25*sr));
+  kick_env < 0.001 ? kick_active = 0;
+);
+
+amt = more/100;
+amt > 0 ? (
+  ax = abs(out);
+  tgt = ax > ceiling ? ceiling/ax : 1;
+  ac = exp(-1/(0.0005*sr));
+  rl = exp(-1/(0.05*sr));
+  lim_env = tgt < lim_env ? tgt + (lim_env-tgt)*ac : tgt + (lim_env-tgt)*rl;
+  out = out*(1-amt) + (out*lim_env)*amt;
+);
+
+out = max(min(out, ceiling), -ceiling);
+spl0 = out; spl1 = out;
+
+@gfx 320 280
+gfx_set(0,0,0,1); gfx_rect(0,0,gfx_w,gfx_h);
+gfx_set(1,1,1,1);
+gfx_rect(2,2,gfx_w-4,3);
+gfx_rect(2,gfx_h-5,gfx_w-4,3);
+gfx_rect(2,2,3,gfx_h-4);
+gfx_rect(gfx_w-5,2,3,gfx_h-4);
+
+gfx_setfont(1,"Arial",18,'b');
+gfx_x=40; gfx_y=18; gfx_drawstr("INFLUENCE DAPPER");
+gfx_x=70; gfx_y=40; gfx_drawstr("BIBLE THUMPER");
+
+gfx_set(snare_on?1:0.25, 0, 0, 1); gfx_rect(40, 80, 100, 60);
+gfx_set(1,1,1,1); gfx_x=68; gfx_y=104; gfx_drawstr("SNARE");
+
+gfx_set(kick_on?1:0.25, 0, 0, 1); gfx_rect(180, 80, 100, 60);
+gfx_set(1,1,1,1); gfx_x=212; gfx_y=104; gfx_drawstr("KICK");
+
+gfx_x=40; gfx_y=170; gfx_drawstr("MORE");
+gfx_set(1,1,1,1); gfx_rect(40,210,240,4);
+gfx_set(1,0,0,1);
+sx = 40 + (more/100)*240;
+gfx_rect(sx-5,200,10,24);
+
+mouse_cap & 1 ? (
+  !click_held && mouse_x>=40 && mouse_x<=140 && mouse_y>=80 && mouse_y<=140 ? (
+    snare_on = 1 - snare_on; click_held = 1; slider_automate(slider1);
+  );
+  !click_held && mouse_x>=180 && mouse_x<=280 && mouse_y>=80 && mouse_y<=140 ? (
+    kick_on = 1 - kick_on; click_held = 1; slider_automate(slider2);
+  );
+  mouse_y>=195 && mouse_y<=230 ? (
+    nm = max(0,min(100,(mouse_x-40)/240*100));
+    more = nm; slider_automate(slider3);
+  );
+) : ( click_held = 0; );
